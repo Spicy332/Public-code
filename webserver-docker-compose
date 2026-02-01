@@ -1,0 +1,67 @@
+services:
+  apache:
+    image: httpd:trixie
+    container_name: my-apache-app
+    restart: unless-stopped
+    ports:
+      - "447:443"
+      - "8083:80"
+    volumes:
+      - /home/west/docker-compose-configs/apache/logs:/usr/local/apache2/logs/
+      - /home/west/docker-compose-configs/apache/htdocs:/usr/local/apache2/htdocs/
+
+  duckdns:
+    image: lscr.io/linuxserver/duckdns:latest
+    container_name: duckdns
+    restart: unless-stopped
+    environment:
+      - PUID=1000 #optional
+      - PGID=1000 #optional
+      - TZ=America/Halifax #optional
+      - SUBDOMAINS=vanwest
+      - TOKEN=<DUCKDNS TOKEN>
+      - UPDATE_IP=ipv4 #optional
+      - LOG_FILE=false #optional
+
+
+
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    environment:
+      - DUCKDNS_TOKEN=<DUCKDNS TOKEN>
+      - DUCKDNS_SUBDOMAIN=vanwest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /home/west/docker-compose-configs/vanwest/traefik/data/traefik.yml:/traefik.yml:ro
+      - /home/west/docker-compose-configs/vanwest/traefik/data/acme.json:/acme.json  
+      - /home/west/docker-compose-configs/vanwest/traefik/config.yml:/config.yml:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.entrypoints=http"
+      - "traefik.http.routers.traefik.rule=Host(`traefik-dashboard.vanwest.duckdns.org`)"
+      - 'traefik.http.middlewares.traefik-auth.basicauth.users=<USER>:<PASSWORD>'
+      - "traefik.http.middlewares.traefik-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.routers.traefik.middlewares=traefik-https-redirect"
+      - "traefik.http.routers.traefik-secure.entrypoints=https"
+      - "traefik.http.routers.traefik-secure.rule=Host(`traefik-dashboard.vanwest.duckdns.org`)"
+      - "traefik.http.routers.traefik-secure.middlewares=traefik-auth"
+      - "traefik.http.routers.traefik-secure.tls=true"
+      - "traefik.http.routers.traefik-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik-secure.tls.domains[0].main=vanwest.duckdns.org"
+      - "traefik.http.routers.traefik-secure.tls.domains[0].sans=*.vanwest.duckdns.org"
+      - "traefik.http.routers.traefik-secure.service=api@internal"
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
+      
+        
