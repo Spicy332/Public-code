@@ -1,0 +1,115 @@
+http:
+ #region routers 
+  routers:
+    gitlab:
+      entryPoints:
+        - "https"
+      rule: "Host(`<WEBSITE URL>`)"
+      middlewares:
+        - default-headers
+        - https-redirectscheme
+      tls: {}
+      service: gitlab
+    nextcloud:
+      entryPoints:
+        - "https"
+      rule: "Host(`<WEBSITE URL>`)"
+      middlewares:
+        - default-headers
+        - https-redirectscheme
+      tls: {}
+      service: nextcloud
+    pihole:
+      entryPoints:
+        - "https"
+      rule: "Host(`<WEBSITE URL>`)"
+      middlewares:
+#        - redirectregex-pihole
+        - default-headers
+#        - addprefix-pihole
+#        - https-redirectscheme
+      tls: {}
+      service: pihole
+
+
+#endregion
+  services:
+    gitlab:
+      loadBalancer:
+        servers:
+          - url: "<IP ADDRESS>"
+        passHostHeader: true
+    nextcloud:
+      loadBalancer:
+        servers:
+          - url: "<IP ADRESS>"
+        passHostHeader: true
+    pihole:
+      loadBalancer:
+        servers:
+          - url: "<IP ADDRESS>"
+        passHostHeader: true
+
+#endregion
+  middlewares:
+    addprefix-pihole:
+      addPrefix:
+        prefix: "/admin"
+    https-redirectscheme:
+      redirectScheme:
+        scheme: https
+        permanent: true
+    redirectregex-pihole:
+      redirectRegex:
+        regex: /admin/$
+        replacement: /
+        
+    onlyoffice-headers:
+      headers:
+        frameDeny: false
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: ""
+        accessControlAllowOriginList: "*"
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    default-headers:
+      headers:
+        frameDeny: true
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    idrac:
+      headers:
+        frameDeny: true
+        browserXssFilter: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsSeconds: 15552000
+        customFrameOptionsValue: SAMEORIGIN
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+
+    default-whitelist:
+      ipWhiteList:
+        sourceRange:
+        - "192.168.1.0/24"
+#        - "172.16.0.0/12"
+
+    secured:
+      chain:
+        middlewares:
+        - default-whitelist
+        - default-headers
