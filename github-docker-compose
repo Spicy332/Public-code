@@ -1,0 +1,143 @@
+services:
+  web:
+    image: gitlab/gitlab-ce:latest
+    container_name: gitlab
+    hostname: 'localhost'
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url <URL to website>
+        gitlab_rails['gitlab_shell_ssh_port'] = 2424
+        nginx['listen_port'] = 443
+        nginx['redirect_http_to_https'] = true
+        nginx['ssl_certificate'] = "/etc/ssl/certs/gitlab/server-cert.pem"
+        nginx['ssl_certificate_key'] = "/etc/ssl/certs/gitlab/server-key.pem"
+        nginx['ssl_protocols'] = "TLSv1.1 TLSv1.2"
+        nginx['logrotate_frequency'] = "weekly"
+        nginx['logrotate_rotate'] = 52
+        nginx['logrotate_compress'] = "compress"
+        nginx['logrotate_method'] = "copytruncate"
+        nginx['logrotate_delaycompress'] = "delaycompress"
+    ports:
+      - '2424:22'
+      - '448:443'
+      - '82:80'
+    volumes:
+      - /home/west/docker-compose-configs/spicyquackattack/gitlab/config:/etc/gitlab
+      - /home/west/docker-compose-configs/spicyquackattack/gitlab/logs:/var/log/gitlab
+      - /home/west/docker-compose-configs/spicyquackattack/gitlab/data:/var/opt/gitlab
+      - /home/west/docker-compose-configs/spicyquackattack/gitlab/ssl:/etc/ssl/certs/gitlab
+    restart: unless-stopped
+    networks:
+      - frontend
+  gitlab-runner:
+    image: gitlab/gitlab-runner:latest
+    container_name: gitlab-runner
+    restart: unless-stopped
+    depends_on:
+      - web
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /home/west/docker-compose-configs/spicyquackattack/gitlab/gitlab-runner:/etc/gitlab-runner
+  
+  pihole:
+    container_name: pihole
+    image: pihole/pihole:latest
+    restart: unless-stopped
+    environment:
+      TZ: 'America/Halifax'    # Change to your timezone
+      WEBPASSWORD: 'changeme'  # Set Pi-hole admin password
+    ports:
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "88:80/tcp"
+      - "444:443"
+    volumes:
+      - ./etc-pihole/:/etc/pihole/
+      - ./etc-dnsmasq.d/:/etc/dnsmasq.d/
+    cap_add:
+      - NET_ADMIN
+
+  nextcloud-proxy:
+    image: nginx:alpine
+    container_name: nextcloud-proxy
+    restart: unless-stopped
+    ports:
+      - "446:443"
+      - "8082:80"
+    networks:
+      - frontend
+    volumes:
+      - /home/west/docker-compose-configs/spicyquackattack/nextcloud/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /home/west/docker-compose-configs/spicyquackattack/nextcloud/nginx/nginx-certs:/etc/nginx/certs:ro
+
+  nextcloud:
+    container_name: nextcloud
+    networks:
+      - frontend
+    image: lscr.io/linuxserver/nextcloud:29.0.0
+    environment:
+      - PUID=1000
+      - PGID=100
+      - TZ=America/Halifax
+    volumes:
+      - /home/west/docker-compose-configs/spicyquackattack/nextcloud/nextcloud-data:/data
+      - /home/west/docker-compose-configs/spicyquackattack/nextcloud/nextcloudapp:/config
+    ports:
+      - "445:443"
+      - "8081:80"
+    restart: unless-stopped
+
+
+  duckdns:
+    image: lscr.io/linuxserver/duckdns:latest
+    container_name: duckdns
+    restart: unless-stopped
+    environment:
+      - PUID=1000 #optional
+      - PGID=1000 #optional
+      - TZ=America/Halifax #optional
+      - SUBDOMAINS=spicyquackattack
+      - TOKEN=<DUCKDNS TOKEN>
+      - UPDATE_IP=ipv4 #optional
+      - LOG_FILE=false #optional
+
+
+
+  traefik:
+    image: traefik:latest
+    container_name: traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    environment:
+      - DUCKDNS_TOKEN=<DUCKDNS TOKEN>
+      - DUCKDNS_SUBDOMAIN=spicyquackattack
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /home/west/docker-compose-configs/spicyquackattack/traefik/data/traefik.yml:/traefik.yml:ro
+      - /home/west/docker-compose-configs/spicyquackattack/traefik/data/acme.json:/acme.json  
+      - /home/west/docker-compose-configs/spicyquackattack/traefik/config.yml:/config.yml:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.entrypoints=http"
+      - "traefik.http.routers.traefik.rule=Host(`traefik-dashboard.spicyquackattack.duckdns.org`)"
+      - 'traefik.http.middlewares.traefik-auth.basicauth.users=<USER>:<PASSWORD>'
+      - "traefik.http.middlewares.traefik-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.sslheader.headers.customrequestheaders.X-Forwarded-Proto=https"
+      - "traefik.http.routers.traefik.middlewares=traefik-https-redirect"
+      - "traefik.http.routers.traefik-secure.entrypoints=https"
+      - "traefik.http.routers.traefik-secure.rule=Host(`traefik-dashboard.spicyquackattack.duckdns.org`)"
+      - "traefik.http.routers.traefik-secure.middlewares=traefik-auth"
+      - "traefik.http.routers.traefik-secure.tls=true"
+      - "traefik.http.routers.traefik-secure.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik-secure.tls.domains[0].main=spicyquackattack.duckdns.org"
+      - "traefik.http.routers.traefik-secure.tls.domains[0].sans=*.spicyquackattack.duckdns.org"
+      - "traefik.http.routers.traefik-secure.service=api@internal"
+    networks:
+      - frontend
+
+networks:
+  frontend:
+    external: true
